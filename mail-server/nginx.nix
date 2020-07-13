@@ -24,21 +24,21 @@ let
   acmeRoot = "/var/lib/acme/acme-challenge";
 in
 {
-  config = lib.mkIf (cfg.enable && cfg.certificateScheme == 3) {
-    services.nginx = {
+  config = lib.mkIf (cfg.enable && (cfg.certificateScheme == "acme" || cfg.certificateScheme == "acme-nginx")) {
+    services.nginx = lib.mkIf (cfg.certificateScheme == "acme-nginx") {
       enable = true;
       virtualHosts."${cfg.fqdn}" = {
         serverName = cfg.fqdn;
+        serverAliases = cfg.certificateDomains;
         forceSSL = true;
         enableACME = true;
         acmeRoot = acmeRoot;
       };
     };
 
-    security.acme.certs."${cfg.fqdn}".postRun = ''
-      systemctl reload nginx
-      systemctl reload postfix
-      systemctl reload dovecot2
-    '';
+    security.acme.certs."${cfg.fqdn}".reloadServices = [
+      "postfix.service"
+      "dovecot2.service"
+    ];
   };
 }

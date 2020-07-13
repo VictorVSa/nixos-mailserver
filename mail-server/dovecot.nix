@@ -23,11 +23,20 @@ let
 
   passwdDir = "/run/dovecot2";
   passwdFile = "${passwdDir}/passwd";
+  userdbFile = "${passwdDir}/userdb";
+  # This file contains the ldap bind password
+  ldapConfFile = "${passwdDir}/dovecot-ldap.conf.ext";
+  bool2int = x: if x then "1" else "0";
 
   maildirLayoutAppendix = lib.optionalString cfg.useFsLayout ":LAYOUT=fs";
+  maildirUTF8FolderNames = lib.optionalString cfg.useUTF8FolderNames ":UTF-8";
 
   # maildir in format "/${domain}/${user}"
-  dovecotMaildir = "maildir:${cfg.mailDirectory}/%d/%n${maildirLayoutAppendix}";
+  dovecotMaildir =
+    "maildir:${cfg.mailDirectory}/%d/%n${maildirLayoutAppendix}${maildirUTF8FolderNames}"
+    + (lib.optionalString (cfg.indexDir != null)
+       ":INDEX=${cfg.indexDir}/%d/%n"
+      );
 
   postfixCfg = config.services.postfix;
   dovecot2Cfg = config.services.dovecot2;
@@ -51,6 +60,41 @@ let
     '';
   };
 
+
+  ldapConfig = pkgs.writeTextFile {
+    name = "dovecot-ldap.conf.ext.template";
+    text = ''
+      ldap_version = 3
+      uris = ${lib.concatStringsSep " " cfg.ldap.uris}
+      ${lib.optionalString cfg.ldap.startTls ''
+      tls = yes
+      ''}
+      tls_require_cert = hard
+      tls_ca_cert_file = ${cfg.ldap.tlsCAFile}
+      dn = ${cfg.ldap.bind.dn}
+      sasl_bind = no
+      auth_bind = yes
+      base = ${cfg.ldap.searchBase}
+      scope = ${mkLdapSearchScope cfg.ldap.searchScope}
+      ${lib.optionalString (cfg.ldap.dovecot.userAttrs != "") ''
+      user_attrs = ${cfg.ldap.dovecot.userAttrs}
+      ''}
+      user_filter = ${cfg.ldap.dovecot.userFilter}
+      ${lib.optionalString (cfg.ldap.dovecot.passAttrs != "") ''
+      pass_attrs = ${cfg.ldap.dovecot.passAttrs}
+      ''}
+      pass_filter = ${cfg.ldap.dovecot.passFilter}
+    '';
+  };
+
+  setPwdInLdapConfFile = appendLdapBindPwd {
+    name = "ldap-conf-file";
+    file = ldapConfig;
+    prefix = "dnpass = ";
+    passwordFile = cfg.ldap.bind.passwordFile;
+    destination = ldapConfFile;
+  };
+
   genPasswdScript = pkgs.writeScript "generate-password-file" ''
     #!${pkgs.stdenv.shell}
 
@@ -61,6 +105,9 @@ let
       chmod 755 "${passwdDir}"
     fi
 
+    # Prevent world-readable password files, even temporarily.
+    umask 077
+
     for f in ${builtins.toString (lib.mapAttrsToList (name: value: passwordFiles."${name}") cfg.loginAccounts)}; do
       if [ ! -f "$f" ]; then
         echo "Expected password hash file $f does not exist!"
@@ -70,18 +117,48 @@ let
 
     cat <<EOF > ${passwdFile}
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: value:
-      "${name}:${"$(head -n 1 ${passwordFiles."${name}"})"}:${builtins.toString cfg.vmailUID}:${builtins.toString cfg.vmailUID}::${cfg.mailDirectory}:/run/current-system/sw/bin/nologin:"
+      "${name}:${"$(head -n 1 ${passwordFiles."${name}"})"}::::::"
+    ) cfg.loginAccounts)}
+    EOF
+
+    cat <<EOF > ${userdbFile}
+    ${lib.concatStringsSep "\n" (lib.mapAttrsToList (name: value:
+      "${name}:::::::"
         + (if lib.isString value.quota
               then "userdb_quota_rule=*:storage=${value.quota}"
               else "")
     ) cfg.loginAccounts)}
     EOF
-
-    chmod 600 ${passwdFile}
   '';
+
+  junkMailboxes = builtins.attrNames (lib.filterAttrs (n: v: v ? "specialUse" && v.specialUse == "Junk") cfg.mailboxes);
+  junkMailboxNumber = builtins.length junkMailboxes;
+  # The assertion garantees there is exactly one Junk mailbox.
+  junkMailboxName = if junkMailboxNumber == 1 then builtins.elemAt junkMailboxes 0 else "";
+
+  mkLdapSearchScope = scope: (
+    if scope == "sub" then "subtree"
+    else if scope == "one" then "onelevel"
+    else scope
+  );
+
 in
 {
   config = with cfg; lib.mkIf enable {
+    assertions = [
+      {
+        assertion = junkMailboxNumber == 1;
+        message = "nixos-mailserver requires exactly one dovecot mailbox with the 'special use' flag set to 'Junk' (${builtins.toString junkMailboxNumber} have been found)";
+      }
+    ];
+
+    # for sieve-test. Shelling it in on demand usually doesnt' work, as it reads
+    # the global config and tries to open shared libraries configured in there,
+    # which are usually not compatible.
+    environment.systemPackages = [
+      pkgs.dovecot_pigeonhole
+    ];
+
     services.dovecot2 = {
       enable = true;
       enableImap = enableImap || enableImapSsl;
@@ -94,7 +171,8 @@ in
       sslServerCert = certificatePath;
       sslServerKey = keyPath;
       enableLmtp = true;
-      modules = [ pkgs.dovecot_pigeonhole ];
+      modules = [ pkgs.dovecot_pigeonhole ] ++ (lib.optional cfg.fullTextSearch.enable pkgs.dovecot_fts_xapian );
+      mailPlugins.globally.enable = lib.optionals cfg.fullTextSearch.enable [ "fts" "fts_xapian" ];
       protocols = lib.optional cfg.enableManageSieve "sieve";
 
       sieveScripts = {
@@ -102,7 +180,7 @@ in
           require "fileinto";
 
           if header :is "X-Spam" "Yes" {
-              fileinto "Junk";
+              fileinto "${junkMailboxName}";
               stop;
           }
         '';
@@ -183,7 +261,7 @@ in
           }
         }
 
-        recipient_delimiter = +
+        recipient_delimiter = ${cfg.recipientDelimiter}
         lmtp_save_to_detail_mailbox = ${cfg.lmtpSaveToDetailMailbox}
 
         protocol lmtp {
@@ -197,8 +275,22 @@ in
 
         userdb {
           driver = passwd-file
-          args = ${passwdFile}
+          args = ${userdbFile}
+          default_fields = uid=${builtins.toString cfg.vmailUID} gid=${builtins.toString cfg.vmailUID} home=${cfg.mailDirectory}
         }
+
+        ${lib.optionalString cfg.ldap.enable ''
+        passdb {
+          driver = ldap
+          args = ${ldapConfFile}
+        }
+
+        userdb {
+          driver = ldap
+          args = ${ldapConfFile}
+          default_fields = home=/var/vmail/ldap/%u uid=${toString cfg.vmailUID} gid=${toString cfg.vmailUID}
+        }
+        ''}
 
         service auth {
           unix_listener auth {
@@ -222,13 +314,13 @@ in
           sieve_default_name = default
 
           # From elsewhere to Spam folder
-          imapsieve_mailbox1_name = Junk
-          imapsieve_mailbox1_causes = COPY
+          imapsieve_mailbox1_name = ${junkMailboxName}
+          imapsieve_mailbox1_causes = COPY,APPEND
           imapsieve_mailbox1_before = file:${stateDir}/imap_sieve/report-spam.sieve
 
           # From Spam folder to elsewhere
           imapsieve_mailbox2_name = *
-          imapsieve_mailbox2_from = Junk
+          imapsieve_mailbox2_from = ${junkMailboxName}
           imapsieve_mailbox2_causes = COPY
           imapsieve_mailbox2_before = file:${stateDir}/imap_sieve/report-ham.sieve
 
@@ -236,6 +328,26 @@ in
 
           sieve_global_extensions = +vnd.dovecot.pipe +vnd.dovecot.environment
         }
+
+        ${lib.optionalString cfg.fullTextSearch.enable ''
+        plugin {
+          plugin = fts fts_xapian
+          fts = xapian
+          fts_xapian = partial=${toString cfg.fullTextSearch.minSize} full=${toString cfg.fullTextSearch.maxSize} attachments=${bool2int cfg.fullTextSearch.indexAttachments} verbose=${bool2int cfg.debug}
+
+          fts_autoindex = ${if cfg.fullTextSearch.autoIndex then "yes" else "no"}
+
+          ${lib.strings.concatImapStringsSep "\n" (n: x: "fts_autoindex_exclude${if n==1 then "" else toString n} = ${x}") cfg.fullTextSearch.autoIndexExclude}
+
+          fts_enforced = ${cfg.fullTextSearch.enforced}
+        }
+
+        ${lib.optionalString (cfg.fullTextSearch.memoryLimit != null) ''
+        service indexer-worker {
+          vsz_limit = ${toString (cfg.fullTextSearch.memoryLimit*1024*1024)}
+        }
+        ''}
+        ''}
 
         lda_mailbox_autosubscribe = yes
         lda_mailbox_autocreate = yes
@@ -252,9 +364,33 @@ in
           ${pkgs.dovecot_pigeonhole}/bin/sievec "$k"
         done
         chown -R '${dovecot2Cfg.mailUser}:${dovecot2Cfg.mailGroup}' '${stateDir}/imap_sieve'
-      '';
+      '' + (lib.optionalString cfg.ldap.enable setPwdInLdapConfFile);
     };
 
-    systemd.services.postfix.restartTriggers = [ genPasswdScript ];
+    systemd.services.postfix.restartTriggers = [ genPasswdScript ] ++ (lib.optional cfg.ldap.enable [setPwdInLdapConfFile]);
+
+    systemd.services.dovecot-fts-xapian-optimize = lib.mkIf (cfg.fullTextSearch.enable && cfg.fullTextSearch.maintenance.enable) {
+      description = "Optimize dovecot indices for fts_xapian";
+      requisite = [ "dovecot2.service" ];
+      after = [ "dovecot2.service" ];
+      startAt = cfg.fullTextSearch.maintenance.onCalendar;
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.dovecot}/bin/doveadm fts optimize -A";
+        PrivateDevices = true;
+        PrivateNetwork = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        ProtectHome = true;
+        ProtectSystem = true;
+        PrivateTmp = true;
+      };
+    };
+    systemd.timers.dovecot-fts-xapian-optimize = lib.mkIf (cfg.fullTextSearch.enable && cfg.fullTextSearch.maintenance.enable && cfg.fullTextSearch.maintenance.randomizedDelaySec != 0) {
+      timerConfig = {
+        RandomizedDelaySec = cfg.fullTextSearch.maintenance.randomizedDelaySec;
+      };
+    };
   };
 }

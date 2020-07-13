@@ -56,6 +56,17 @@ in
               # Disable outbound email signing, we use opendkim for this
               enabled = false;
           ''; };
+          "dmarc.conf" = { text = ''
+              ${lib.optionalString cfg.dmarcReporting.enable ''
+              reporting {
+                enabled = true;
+                email = "${cfg.dmarcReporting.email}";
+                domain = "${cfg.dmarcReporting.domain}";
+                org_name = "${cfg.dmarcReporting.organizationName}";
+                from_name = "${cfg.dmarcReporting.fromName}";
+                msgid_from = "dmarc-rua";
+              }''}
+          ''; };
       };
 
       overrides = {
@@ -98,11 +109,72 @@ in
 
     };
 
-    services.redis.enable = true;
+    services.redis.servers.rspamd = {
+      enable = lib.mkDefault true;
+      port = lib.mkDefault 6380;
+    };
 
     systemd.services.rspamd = {
-      requires = [ "redis.service" ] ++ (lib.optional cfg.virusScanning "clamav-daemon.service");
-      after = [ "redis.service" ] ++ (lib.optional cfg.virusScanning "clamav-daemon.service");
+      requires = [ "redis-rspamd.service" ] ++ (lib.optional cfg.virusScanning "clamav-daemon.service");
+      after = [ "redis-rspamd.service" ] ++ (lib.optional cfg.virusScanning "clamav-daemon.service");
+    };
+
+    systemd.services.rspamd-dmarc-reporter = lib.optionalAttrs (cfg.dmarcReporting.enable) {
+      # Explicitly select yesterday's date to work around broken
+      # default behaviour when called without a date.
+      # https://github.com/rspamd/rspamd/issues/4062
+      script = ''
+        ${pkgs.rspamd}/bin/rspamadm dmarc_report $(date -d "yesterday" "+%Y%m%d")
+      '';
+      serviceConfig = {
+        User = "${config.services.rspamd.user}";
+        Group = "${config.services.rspamd.group}";
+
+        AmbientCapabilities = [];
+        CapabilityBoundingSet = "";
+        DevicePolicy = "closed";
+        IPAddressAllow = "localhost";
+        LockPersonality = true;
+        NoNewPrivileges = true;
+        PrivateDevices = true;
+        PrivateMounts = true;
+        PrivateTmp = true;
+        PrivateUsers = true;
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectHome = true;
+        ProtectHostname = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
+        ProtectKernelTunables = true;
+        ProtectProc = "invisible";
+        ProcSubset = "pid";
+        ProtectSystem = "strict";
+        RemoveIPC = true;
+        RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
+        SystemCallArchitectures = "native";
+        SystemCallFilter = [
+          "@system-service"
+          "~@privileged"
+        ];
+        UMask = "0077";
+      };
+    };
+
+    systemd.timers.rspamd-dmarc-reporter = lib.optionalAttrs (cfg.dmarcReporting.enable) {
+      description = "Daily delivery of aggregated DMARC reports";
+      wantedBy = [
+        "timers.target"
+      ];
+      timerConfig = {
+        OnCalendar = "daily";
+        Persistent = true;
+        RandomizedDelaySec = 86400;
+        FixedRandomDelay = true;
+      };
     };
 
     systemd.services.postfix = {

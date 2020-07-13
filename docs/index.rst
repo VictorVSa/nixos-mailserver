@@ -6,18 +6,18 @@
 Welcome to NixOS Mailserver's documentation!
 ============================================
 
-.. image:: ../logo/logo.png
+.. image:: logo.png
    :width: 400
    :alt: SNM Logo
 
 .. toctree::
    :maxdepth: 2
 
-   quick-start
    setup-guide
    howto-develop
    faq
    release-notes
+   options
 
 .. toctree::
    :maxdepth: 1
@@ -25,8 +25,12 @@ Welcome to NixOS Mailserver's documentation!
 
    backup-guide
    add-radicale
+   add-roundcube
    rspamd-tuning
-
+   fts
+   flakes
+   autodiscovery
+   ldap
 
 Indices and tables
 ==================

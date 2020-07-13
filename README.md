@@ -8,28 +8,21 @@
 For each NixOS release, we publish a branch. You then have to use the
 SNM branch corresponding to your NixOS version.
 
-* For NixOS 20.09
-   - Use the [SNM branch `nixos-20.09`](https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/tree/nixos-20.09)
-   - [Documentation](https://nixos-mailserver.readthedocs.io/en/nixos-20.09/)
-   - [Release notes](https://nixos-mailserver.readthedocs.io/en/nixos-20.09/release-notes.html#nixos-20-09)
-* For NixOS 20.03
-   - Use the [SNM branch `nixos-20.03`](https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/tree/nixos-20.03)
-   - [Release notes](#nixos-2003)
+* For NixOS 23.05
+   - Use the [SNM branch `nixos-23.05`](https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/tree/nixos-23.05)
+   - [Documentation](https://nixos-mailserver.readthedocs.io/en/nixos-23.05/)
+   - [Release notes](https://nixos-mailserver.readthedocs.io/en/nixos-23.05/release-notes.html#nixos-23-05)
+* For NixOS 22.11
+   - Use the [SNM branch `nixos-22.11`](https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/tree/nixos-22.11)
+   - [Documentation](https://nixos-mailserver.readthedocs.io/en/nixos-22.11/)
+   - [Release notes](https://nixos-mailserver.readthedocs.io/en/nixos-22.11/release-notes.html#nixos-22-11)
 * For NixOS unstable
    - Use the [SNM branch `master`](https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/tree/master)
    - [Documentation](https://nixos-mailserver.readthedocs.io/en/latest/)
-   - This branch is currently supporting the NixOS release 20.09 but
-     we could remove this support on any NixOS unstable breaking
-     change.
 
 [Subscribe to SNM Announcement List](https://www.freelists.org/list/snm)
 This is a very low volume list where new releases of SNM are announced, so you
-can stay up to date with bug fixes and updates. All announcements are signed by
-the gpg key with fingerprint
-
-```
-D9FE 4119 F082 6F15 93BD  BD36 6162 DBA5 635E A16A
-```
+can stay up to date with bug fixes and updates.
 
 
 ## Features
@@ -73,75 +66,20 @@ D9FE 4119 F082 6F15 93BD  BD36 6162 DBA5 635E A16A
   * DKIM Signing
     - [ ] Allow a per domain selector
 
-### Changelog and How to Stay Up-to-Date
+### Get in touch
 
-See the [mailing list archive](https://www.freelists.org/archive/snm/)
-
-### Quick Start
-
-```nix
-   { config, pkgs, ... }:
-   let release = "nixos-20.09";
-   in {
-     imports = [
-       (builtins.fetchTarball {
-         url = "https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/archive/${release}/nixos-mailserver-${release}.tar.gz";
-         # This hash needs to be updated
-         sha256 = "0000000000000000000000000000000000000000000000000000";
-       })
-     ];
-
-     mailserver = {
-       enable = true;
-       fqdn = "mail.example.com";
-       domains = [ "example.com" "example2.com" ];
-       loginAccounts = {
-           "user1@example.com" = {
-               # nix run nixpkgs.apacheHttpd -c htpasswd -nbB "" "super secret password" | cut -d: -f2 > /hashed/password/file/location
-               hashedPasswordFile = "/hashed/password/file/location";
-
-               aliases = [
-                   "info@example.com"
-                   "postmaster@example.com"
-                   "postmaster@example2.com"
-               ];
-           };
-       };
-     };
-   }
-```
-
-For a complete list of options, see `default.nix`.
-
-
+- Subscribe to the [mailing list](https://www.freelists.org/archive/snm/)
+- Join the Libera Chat IRC channel `#nixos-mailserver`
 
 ## How to Set Up a 10/10 Mail Server Guide
-Check out the [Complete Setup Guide](https://nixos-mailserver.readthedocs.io/en/latest/setup-guide.html) in the project's documentation.
 
-## How to Backup
+Check out the [Setup Guide](https://nixos-mailserver.readthedocs.io/en/latest/setup-guide.html) in the project's documentation.
 
-Checkout the [Complete Backup Guide](https://nixos-mailserver.readthedocs.io/en/latest/backup-guide.html). Backups are easy with `SNM`.
+For a complete list of options, [see in readthedocs](https://nixos-mailserver.readthedocs.io/en/latest/options.html).
 
 ## Development
 
-See the [How to Develop SNM](https://nixos-mailserver.readthedocs.io/en/latest/howto-develop.html) wiki page.
-
-## Release notes
-
-### nixos-20.03
-
-- Rspamd is upgraded to 2.0 which deprecates the SQLite Bayes
-  backend. We then moved to the Redis backend (the default since
-  Rspamd 2.0). If you don't want to relearn the Redis backend from the
-  scratch, we could manually run
-
-      rspamadm statconvert --spam-db /var/lib/rspamd/bayes.spam.sqlite --ham-db /var/lib/rspamd/bayes.ham.sqlite -h 127.0.0.1:6379 --symbol-ham BAYES_HAM --symbol-spam BAYES_SPAM
-
-  See the [Rspamd migration
-  notes](https://rspamd.com/doc/migration.html#migration-to-rspamd-20)
-  and [this SNM Merge
-  Request](https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/merge_requests/164)
-  for details.
+See the [How to Develop SNM](https://nixos-mailserver.readthedocs.io/en/latest/howto-develop.html) documentation page.
 
 ## Contributors
 See the [contributor tab](https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/graphs/master)
@@ -156,6 +94,4 @@ See the [contributor tab](https://gitlab.com/simple-nixos-mailserver/nixos-mails
  * Logo made with [Logomakr.com](https://logomakr.com)
 
 
-
-
-[logo]: logo/logo.png
+[logo]: docs/logo.png

@@ -14,7 +14,7 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program. If not, see <http://www.gnu.org/licenses/>
 
-{ pkgs ? import <nixpkgs> {}}:
+{ pkgs ? import <nixpkgs> {}, ...}:
 
 let
   sendMail = pkgs.writeTextFile {
@@ -29,15 +29,15 @@ let
 
   hashPassword = password: pkgs.runCommand
     "password-${password}-hashed"
-    { buildInputs = [ pkgs.apacheHttpd ]; } ''
-      htpasswd -nbB "" "${password}" | cut -d: -f2 > $out
+    { buildInputs = [ pkgs.mkpasswd ]; inherit password; } ''
+      mkpasswd -sm bcrypt <<<"$password" > $out
     '';
 
   hashedPasswordFile = hashPassword "my-password";
   passwordFile = pkgs.writeText "password" "my-password";
 in
 pkgs.nixosTest {
-  name = "intern";
+  name = "internal";
   nodes = {
     machine = { config, pkgs, ... }: {
       imports = [
@@ -55,7 +55,7 @@ pkgs.nixosTest {
       mailserver = {
         enable = true;
         fqdn = "mail.example.com";
-        domains = [ "example.com" ];
+        domains = [ "example.com" "domain.com" ];
         localDnsResolver = false;
 
         loginAccounts = {
@@ -64,6 +64,7 @@ pkgs.nixosTest {
           };
           "user2@example.com" = {
             hashedPasswordFile = hashedPasswordFile;
+            aliasesRegexp = [''/^user2.*@domain\.com$/''];
           };
           "send-only@example.com" = {
             hashedPasswordFile = hashPassword "send-only";
@@ -126,6 +127,46 @@ pkgs.nixosTest {
             )
         )
 
+    with subtest("regex email alias are received"):
+        # A mail sent to user2-regex-alias@domain.com is in the user2@example.com mailbox
+        machine.succeed(
+            " ".join(
+                [
+                    "mail-check send-and-read",
+                    "--smtp-port 587",
+                    "--smtp-starttls",
+                    "--smtp-host localhost",
+                    "--imap-host localhost",
+                    "--imap-username user2@example.com",
+                    "--from-addr user1@example.com",
+                    "--to-addr user2-regex-alias@domain.com",
+                    "--src-password-file ${passwordFile}",
+                    "--dst-password-file ${passwordFile}",
+                    "--ignore-dkim-spf",
+                ]
+            )
+        )
+
+    with subtest("user can send from regex email alias"):
+        # A mail sent from user2-regex-alias@domain.com, using user2@example.com credentials is received
+        machine.succeed(
+            " ".join(
+                [
+                    "mail-check send-and-read",
+                    "--smtp-port 587",
+                    "--smtp-starttls",
+                    "--smtp-host localhost",
+                    "--imap-host localhost",
+                    "--smtp-username user2@example.com",
+                    "--from-addr user2-regex-alias@domain.com",
+                    "--to-addr user1@example.com",
+                    "--src-password-file ${passwordFile}",
+                    "--dst-password-file ${passwordFile}",
+                    "--ignore-dkim-spf",
+                ]
+            )
+        )
+
     with subtest("vmail gid is set correctly"):
         machine.succeed("getent group vmail | grep 5000")
 
@@ -133,7 +174,7 @@ pkgs.nixosTest {
         machine.wait_for_open_port(25)
         # TODO put this blocking into the systemd units
         machine.wait_until_succeeds(
-            "timeout 1 ${pkgs.netcat}/bin/nc -U /run/rspamd/rspamd-milter.sock < /dev/null; [ $? -eq 124 ]"
+            "set +e; timeout 1 ${pkgs.netcat}/bin/nc -U /run/rspamd/rspamd-milter.sock < /dev/null; [ $? -eq 124 ]"
         )
         machine.succeed(
             "cat ${sendMail} | ${pkgs.netcat-gnu}/bin/nc localhost 25 | grep -q 'This account cannot receive emails'"
@@ -141,7 +182,7 @@ pkgs.nixosTest {
 
     with subtest("rspamd controller serves web ui"):
         machine.succeed(
-            "${pkgs.curl}/bin/curl --unix-socket /run/rspamd/worker-controller.sock http://localhost/ | grep -q '<body>'"
+            "set +o pipefail; ${pkgs.curl}/bin/curl --unix-socket /run/rspamd/worker-controller.sock http://localhost/ | grep -q '<body>'"
         )
 
     with subtest("imap port 143 is closed and imaps is serving SSL"):

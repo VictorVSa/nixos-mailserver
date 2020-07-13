@@ -1,4 +1,4 @@
-{ nixpkgs, declInput, pulls }:
+{ nixpkgs, pulls, ... }:
 
 let
   pkgs = import nixpkgs {};
@@ -8,85 +8,37 @@ let
     { enabled = 1;
       hidden = false;
       description = "PR ${num}: ${info.title}";
-      nixexprinput = "snm";
-      nixexprpath = ".hydra/default.nix";
       checkinterval = 30;
       schedulingshares = 20;
       enableemail = false;
       emailoverride = "";
       keepnr = 1;
-      type = 0;
-      inputs = {
-        snm = {
-          type = "git";
-          value = "${info.target_repo_url} merge-requests/${info.iid}/head";
-          emailresponsible = false;
-        };
-      };
+      type = 1;
+      flake = "gitlab:simple-nixos-mailserver/nixos-mailserver/merge-requests/${info.iid}/head";
     }
   ) prs;
+  mkFlakeJobset = branch: {
+    description = "Build ${branch} branch of Simple NixOS MailServer";
+    checkinterval = "60";
+    enabled = "1";
+    schedulingshares = 100;
+    enableemail = false;
+    emailoverride = "";
+    keepnr = 3;
+    hidden = false;
+    type = 1;
+    flake = "gitlab:simple-nixos-mailserver/nixos-mailserver/${branch}";
+  };
 
   desc = prJobsets // {
-    master = {
-      description = "Build master branch of Simple NixOS MailServer";
-      checkinterval = "60";
-      enabled = "1";
-      nixexprinput = "snm";
-      nixexprpath = ".hydra/default.nix";
-      schedulingshares = 100;
-      enableemail = false;
-      emailoverride = "";
-      keepnr = 3;
-      hidden = false;
-      type = 0;
-      inputs = {
-        snm = {
-          value = "https://gitlab.com/simple-nixos-mailserver/nixos-mailserver master";
-          type = "git";
-          emailresponsible = false;
-        };
-      };
-    };
-    "nixos-20.03" = {
-      description = "Build the nixos-20.03 branch of Simple NixOS MailServer";
-      checkinterval = "60";
-      enabled = "1";
-      nixexprinput = "snm";
-      nixexprpath = ".hydra/default.nix";
-      schedulingshares = 100;
-      enableemail = false;
-      emailoverride = "";
-      keepnr = 3;
-      hidden = false;
-      type = 0;
-      inputs = {
-        snm = {
-          value = "https://gitlab.com/simple-nixos-mailserver/nixos-mailserver nixos-20.03";
-          type = "git";
-          emailresponsible = false;
-        };
-      };
-    };
-    "nixos-20.09" = {
-      description = "Build the nixos-20.09 branch of Simple NixOS MailServer";
-      checkinterval = "60";
-      enabled = "1";
-      nixexprinput = "snm";
-      nixexprpath = ".hydra/default.nix";
-      schedulingshares = 100;
-      enableemail = false;
-      emailoverride = "";
-      keepnr = 3;
-      hidden = false;
-      type = 0;
-      inputs = {
-        snm = {
-          value = "https://gitlab.com/simple-nixos-mailserver/nixos-mailserver nixos-20.09";
-          type = "git";
-          emailresponsible = false;
-        };
-      };
-    };
+    "master" = mkFlakeJobset "master";
+    "nixos-22.11" = mkFlakeJobset "nixos-22.11";
+    "nixos-23.05" = mkFlakeJobset "nixos-23.05";
+  };
+
+  log = {
+    pulls = prs;
+    jobsets = desc;
   };
 
 in {
@@ -94,5 +46,10 @@ in {
     cat >$out <<EOF
     ${builtins.toJSON desc}
     EOF
+    # This is to get nice .jobsets build logs on Hydra
+    cat >tmp <<EOF
+    ${builtins.toJSON log}
+    EOF
+    ${pkgs.jq}/bin/jq . tmp
   '';
 }

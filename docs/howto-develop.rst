@@ -1,35 +1,49 @@
 Contribute or troubleshoot
 ==========================
 
+To report an issue, please go to
+`<https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/issues>`_.
+
+You can also chat with us on the Libera IRC channel ``#nixos-mailserver``.
+
 Run NixOS tests
 ---------------
 
-You can run the testsuite via
+To run the test suite, you need to enable `Nix Flakes
+<https://nixos.wiki/wiki/Flakes#Installing_flakes>`_.
+
+You can then run the testsuite via
 
 ::
 
-   $ nix-build tests -A extern.nixpkgs_20_03
-   $ nix-build tests -A intern.nixpkgs_unstable
-   ...
+   $ nix flake check -L
+
+Since Nix doesn't garantee your machine have enough resources to run
+all test VMs in parallel, some tests can fail. You would then haev to
+run tests manually. For instance:
+
+::
+
+   $ nix build .#hydraJobs.x86_64-linux.external-unstable -L
+
 
 Contributing to the documentation
 ---------------------------------
 
-The documentation is written in RST, build with Sphinx and published
-by `Read the Docs <https://readthedocs.org/>`_.
+The documentation is written in RST (except option documentation which is in CommonMark),
+built with Sphinx and published by `Read the Docs <https://readthedocs.org/>`_.
 
-For the syntax, see `RST/Sphinx Cheatsheet
-<https://sphinx-tutorial.readthedocs.io/cheatsheet/>`_.
+For the syntax, see the `RST/Sphinx primer
+<https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html>`_.
 
-The ``shell.nix`` provides all the tooling required to build the
-documentation:
+To build the documentation, you need to enable `Nix Flakes
+<https://nixos.wiki/wiki/Flakes#Installing_flakes>`_.
+
 
 ::
 
-   $ nix-shell
-   $ cd docs
-   $ make html
-   $ firefox ./_build/html/index.html
+   $ nix build .#documentation
+   $ xdg-open result/index.html
 
 Nixops
 ------

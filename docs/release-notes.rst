@@ -1,6 +1,50 @@
 Release Notes
 =============
 
+
+NixOS 23.05
+-----------
+
+- Existing ACME certificates can be reused without configuring NGINX
+- Certificate scheme is no longer a number, but a meaningful string instead
+
+NixOS 22.11
+-----------
+
+- Allow Rspamd to send DMARC reporting
+  (`merge request <https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/merge_requests/244>`__)
+
+NixOS 22.05
+-----------
+
+- Make NixOS Mailserver options discoverable from search.nixos.org
+- Add a roundcube setup guide in the documentation
+
+NixOS 21.11
+-----------
+
+- Switch default DKIM body policy from simple to relaxed
+  (`merge request <https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/merge_requests/247>`__)
+- Ensure locally-delivered mails have the X-Original-To header
+  (`merge request <https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/merge_requests/243>`__)
+- NixOS Mailserver options are detailed in the `documentation
+  <https://nixos-mailserver.readthedocs.io/en/latest/options.html>`__
+- New options ``dkimBodyCanonicalization`` and
+  ``dkimHeaderCanonicalization``
+- New option ``certificateDomains`` to generate certificate for
+  additional domains (such as ``imap.example.com``)
+
+
+NixOS 21.05
+-----------
+
+- New `fullTextSearch` option to search in messages (based on Xapian)
+  (`Merge Request <https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/merge_requests/212>`__)
+- Flake support
+  (`Merge Request <https://gitlab.com/simple-nixos-mailserver/nixos-mailserver/-/merge_requests/200>`__)
+- New `openFirewall` option defaulting to `true`
+- We moved from Freenode to Libera Chat
+
 NixOS 20.09
 -----------
 

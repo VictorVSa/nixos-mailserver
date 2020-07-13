@@ -1,13 +1,13 @@
 # This tests is used to test features requiring several mail domains.
 
-{ pkgs ? import <nixpkgs> {}}:
+{ pkgs ? import <nixpkgs> {}, ...}:
 
 let
     hashPassword = password: pkgs.runCommand
       "password-${password}-hashed"
-      { buildInputs = [ pkgs.apacheHttpd ]; }
+      { buildInputs = [ pkgs.mkpasswd ]; inherit password; }
       ''
-        htpasswd -nbB "" "${password}" | cut -d: -f2 > $out
+        mkpasswd -sm bcrypt <<<"$password" > $out
       '';
 
     password = pkgs.writeText "password" "password";
@@ -30,6 +30,8 @@ let
       };
       services.dnsmasq = {
         enable = true;
+        # Fixme: once nixos-22.11 has been removed, could be replaced by
+        # settings.mx-host = [ "domain1.com,domain1,10" "domain2.com,domain2,10" ];
         extraConfig = ''
           mx-host=domain1.com,domain1,10
           mx-host=domain2.com,domain2,10
@@ -68,10 +70,10 @@ pkgs.nixosTest {
 
     # TODO put this blocking into the systemd units?
     domain1.wait_until_succeeds(
-        "timeout 1 ${pkgs.netcat}/bin/nc -U /run/rspamd/rspamd-milter.sock < /dev/null; [ $? -eq 124 ]"
+        "set +e; timeout 1 ${pkgs.netcat}/bin/nc -U /run/rspamd/rspamd-milter.sock < /dev/null; [ $? -eq 124 ]"
     )
     domain2.wait_until_succeeds(
-        "timeout 1 ${pkgs.netcat}/bin/nc -U /run/rspamd/rspamd-milter.sock < /dev/null; [ $? -eq 124 ]"
+        "set +e; timeout 1 ${pkgs.netcat}/bin/nc -U /run/rspamd/rspamd-milter.sock < /dev/null; [ $? -eq 124 ]"
     )
 
     # user@domain1.com sends a mail to user@domain2.com
