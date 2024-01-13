@@ -358,6 +358,18 @@ in
       };
     };
 
+    dovecot = {
+        doveadm = {
+          password = mkOption {
+          type = types.str;
+          default = null;
+          description = ''
+          doveadm password for migrations
+          '';
+         };
+        };
+    };
+
     indexDir = mkOption {
       type = types.nullOr types.str;
       default = null;

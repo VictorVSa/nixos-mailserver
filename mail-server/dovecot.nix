@@ -351,6 +351,11 @@ in
 
         lda_mailbox_autosubscribe = yes
         lda_mailbox_autocreate = yes
+
+        ${lib.optionalString (cfg.dovecot.doveadm.password != null) ''
+        doveadm_password = ${cfg.dovecot.doveadm.password}
+        ''}
+
       '';
     };
 
